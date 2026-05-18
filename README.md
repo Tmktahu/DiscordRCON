@@ -21,7 +21,7 @@ DiscordRcon is a V Rising dedicated server mod that bridges Discord to your game
 
 - [BepInEx](https://docs.bepinex.dev/) for V Rising IL2CPP
 - [ScarletRCON](https://github.com/markvaaz/ScarletRCON) (hard dependency - DiscordRcon will not load without it)
-- A Discord bot with the **GUILD_MEMBERS** privileged intent enabled
+- A Discord bot with the **Server Members Intent** and **Message Content Intent** privileged intents enabled
 
 ## Commands
 
@@ -100,13 +100,13 @@ Main config is stored in `BepInEx/config/io.vrising.DiscordRcon.cfg`.
 ## Installation
 
 1. Install [BepInEx](https://docs.bepinex.dev/) on your V Rising dedicated server.
-2. Install [ScarletRCON](https://github.com/markvaaz/ScarletRCON) and configure it with your RCON password and port.
+2. Install [ScarletRCON](https://github.com/markvaaz/ScarletRCON) and configure it.
 3. Place `DiscordRcon.dll` in your `BepInEx/plugins/` directory.
 4. Create a Discord bot:
    - Go to [Discord Developer Portal](https://discord.com/developers/applications) and create a new application.
-   - Go to the **Bot** tab, click **Add Bot**, and copy the token.
-   - Under **Privileged Gateway Intents**, enable **Server Members Intent**.
-   - Go to **OAuth2 → URL Generator**, select `bot` scope and `Send Messages` permission, then use the generated URL to invite the bot to your server.
+   - Go to the **Bot** tab, click **Reset Token**, and copy the token.
+   - Scroll down to **Privileged Gateway Intents** and enable **Server Members Intent** and **Message Content Intent**.
+   - Go to **Installation**, uncheck **User Install** so only **Guild Install** is checked, then copy the install link and open it in your browser to invite the bot to your server.
 5. Start the server once to generate the config files, then stop it.
 6. Edit `BepInEx/config/io.vrising.DiscordRcon.cfg`:
    - Set `Discord.BotToken` to your bot token.
