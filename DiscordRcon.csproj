@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>DiscordRcon</AssemblyName>
+    <Version>1.0.0</Version>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RestoreSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+    </RestoreSources>
+    <BepInExPluginGuid>io.vrising.DiscordRcon</BepInExPluginGuid>
+    <LangVersion>preview</LangVersion>
+    <VRisingServerPath>T:\SteamLibrary\steamapps\common\VRisingDedicatedServer</VRisingServerPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.1.0" />
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.733" IncludeAssets="compile" />
+    <PackageReference Include="DSharpPlus" Version="4.5.2" />
+    <PackageReference Include="ILRepack" Version="2.0.45">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include='Il2Cppmscorlib'>
+      <HintPath>$(VRisingServerPath)/BepInEx/interop/Il2Cppmscorlib.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include='UnityEngine.CoreModule'>
+      <HintPath>$(VRisingServerPath)/BepInEx/interop/UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include='UnityEngine'>
+      <HintPath>$(VRisingServerPath)/BepInEx/interop/UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include='Newtonsoft.Json'>
+      <HintPath>$(VRisingServerPath)/BepInEx/interop/Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ILRepack" AfterTargets="Build">
+    <PropertyGroup>
+      <WorkingDirectory>$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)</WorkingDirectory>
+      <ILRepackExe>$(NuGetPackageRoot)ilrepack\2.0.45\tools\ilrepack.exe</ILRepackExe>
+    </PropertyGroup>
+
+    <Exec Command="&quot;$(ILRepackExe)&quot; /out:&quot;$(WorkingDirectory)\DiscordRcon.dll&quot; /internalize /allowduplicateresources /lib:&quot;$(WorkingDirectory)&quot; /lib:&quot;$(VRisingServerPath)\BepInEx\interop&quot; /lib:&quot;$(NuGetPackageRoot)bepinex.core\6.0.0-be.733\lib\netstandard2.0&quot; /lib:&quot;$(NuGetPackageRoot)bepinex.unity.il2cpp\6.0.0-be.733\lib\net6.0&quot; /lib:&quot;$(NuGetPackageRoot)bepinex.unity.common\6.0.0-be.733\lib\netstandard2.0&quot; &quot;$(WorkingDirectory)\DiscordRcon.dll&quot; &quot;$(WorkingDirectory)\Newtonsoft.Json.dll&quot; &quot;$(WorkingDirectory)\DSharpPlus.dll&quot; &quot;$(WorkingDirectory)\Microsoft.Extensions.Logging.Abstractions.dll&quot; &quot;$(WorkingDirectory)\System.Collections.Immutable.dll&quot;"
+          WorkingDirectory="$(WorkingDirectory)" />
+  </Target>
+
+  <Target Name="CleanupMergedDlls" AfterTargets="ILRepack">
+    <PropertyGroup>
+      <WorkingDirectory>$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)</WorkingDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <MergedDlls Include="$(WorkingDirectory)\DSharpPlus.dll" />
+      <MergedDlls Include="$(WorkingDirectory)\Newtonsoft.Json.dll" />
+      <MergedDlls Include="$(WorkingDirectory)\Microsoft.Extensions.Logging.Abstractions.dll" />
+      <MergedDlls Include="$(WorkingDirectory)\System.Collections.Immutable.dll" />
+    </ItemGroup>
+    <Delete Files="@(MergedDlls)" />
+  </Target>
+
+  <Target Name="BuildToClient" AfterTargets="CleanupMergedDlls">
+    <Copy SourceFiles="$(TargetDir)$(ProjectName).dll" DestinationFolder="$(VRisingServerPath)\BepInEx\plugins" />
+  </Target>
+
+</Project>

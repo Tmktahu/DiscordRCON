@@ -1,0 +1,34 @@
+## Build results
+bin/
+obj/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.sln
+
+## Rider
+.idea/
+*.sln.iml
+
+## VS Code
+.vscode/
+
+## NuGet
+*.nupkg
+packages/
+
+## OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+## ThunderStore packaging
+/ThunderStore
+PackThunderStore.ps1
+
+## Plan files
+DISCORDRCON_PLAN.md
