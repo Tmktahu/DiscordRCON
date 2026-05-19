@@ -4,9 +4,9 @@ namespace DiscordRcon.Models;
 
 public class RoleConfig
 {
-  [JsonPropertyName("defaultRoles")]
-  public List<string> DefaultRoles { get; set; } = new();
+  [JsonPropertyName("adminRoles")]
+  public List<string> AdminRoles { get; set; } = new();
 
-  [JsonPropertyName("commandOverrides")]
-  public Dictionary<string, List<string>> CommandOverrides { get; set; } = new();
+  [JsonPropertyName("commandRoles")]
+  public Dictionary<string, List<string>> CommandRoles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

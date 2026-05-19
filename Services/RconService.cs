@@ -2,6 +2,8 @@ namespace DiscordRcon.Services;
 
 public class RconService
 {
+  readonly SemaphoreSlim _concurrencyLimiter = new(1, 1);
+
   public async Task<RconResult> SendCommandAsync(string command, int? timeoutMs = null)
   {
     var cfg = Core.ConfigService;
@@ -11,12 +13,14 @@ public class RconService
       return RconResult.Fail("RCON password not configured");
     }
 
-    var timeout = timeoutMs ?? cfg.RconCommandTimeoutMs;
-
-    using var client = new RconClient();
+    await _concurrencyLimiter.WaitAsync();
 
     try
     {
+      var timeout = timeoutMs ?? cfg.RconCommandTimeoutMs;
+
+      using var client = new RconClient();
+
       await client.ConnectAsync(cfg.RconHost, cfg.RconPort, cfg.RconPassword);
       var response = await client.SendCommandAsync(command, timeout);
 
@@ -36,10 +40,15 @@ public class RconService
       Core.Log.LogWarning($"RCON failed: {e.Message}");
       return RconResult.Fail($"RCON not ready: {e.Message}");
     }
+    finally
+    {
+      _concurrencyLimiter.Release();
+    }
   }
 
   public void Shutdown()
   {
+    _concurrencyLimiter.Dispose();
   }
 }
 

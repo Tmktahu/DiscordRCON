@@ -16,7 +16,16 @@ internal static class Core
   public static void Initialize()
   {
     ConfigService = new ConfigService();
-    ConfigService.Initialize();
+
+    try
+    {
+      ConfigService.Initialize();
+    }
+    catch (Exception e)
+    {
+      Log.LogError($"Config failed to load: {e.Message}. DiscordRcon will not start.");
+      return;
+    }
 
     RconService = new RconService();
     DiscordBotService = new DiscordBotService();
@@ -48,10 +57,14 @@ internal static class Core
     Log.LogWarning("");
     Log.LogWarning("2. Edit the role config file:");
     Log.LogWarning($"   {ConfigService.RoleConfigPath}");
-    Log.LogWarning("   - Add your Discord role IDs to defaultRoles");
-    Log.LogWarning("   - Or add per-command overrides in commandOverrides");
+    Log.LogWarning("   - Add your Discord role IDs to adminRoles");
+    Log.LogWarning("   - Or add per-command grants in commandRoles");
     Log.LogWarning("");
-    Log.LogWarning("3. Restart the server");
+    Log.LogWarning("3. Optionally edit the custom commands file:");
+    Log.LogWarning($"   {ConfigService.CustomCommandsPath}");
+    Log.LogWarning("   - Add or remove slash command shortcuts for RCON commands");
+    Log.LogWarning("");
+    Log.LogWarning("4. Restart the server");
     Log.LogWarning("========================================");
   }
 
@@ -62,15 +75,13 @@ internal static class Core
     Log.LogInfo($"  Discord: {(string.IsNullOrEmpty(cfg.DiscordBotToken) ? "NOT CONFIGURED" : "Token set")}");
     Log.LogInfo($"  Discord Guild: {(cfg.DiscordGuildId == 0 ? "NOT SET" : cfg.DiscordGuildId.ToString())}");
     Log.LogInfo($"  RCON: {cfg.RconHost}:{cfg.RconPort} (password {(string.IsNullOrEmpty(cfg.RconPassword) ? "NOT SET" : "set")})");
-    Log.LogInfo($"  Command Prefix: {cfg.CommandPrefix}");
-    Log.LogInfo($"  Discovery: {(cfg.DiscoveryEnabled ? "enabled" : "disabled")}");
-    Log.LogInfo($"  Role Config: {cfg.RoleConfig.DefaultRoles.Count} default roles, {cfg.RoleConfig.CommandOverrides.Count} command overrides");
+    Log.LogInfo($"  Role Config: {cfg.RoleConfig.AdminRoles.Count} admin roles, {cfg.RoleConfig.CommandRoles.Count} command roles");
+    Log.LogInfo($"  Custom Commands: {cfg.CustomCommands.Count} commands");
     Log.LogInfo("-----------------------------------");
   }
 
   public static void Shutdown()
   {
-    CommandDiscoveryService?.Shutdown();
     DiscordBotService?.Shutdown();
     RconService?.Shutdown();
   }

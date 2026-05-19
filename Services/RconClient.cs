@@ -29,7 +29,7 @@ public class RconClient : IDisposable
 
     while (true)
     {
-      var (id, type, _) = await ReadPacketAsync();
+      var (id, type, _) = await ReadPacketAsync(cts.Token);
       if (type == SERVERDATA_AUTH_RESPONSE)
       {
         if (id == -1) throw new Exception("RCON authentication failed");
@@ -46,15 +46,14 @@ public class RconClient : IDisposable
 
     while (true)
     {
-      var (_, type, body) = await ReadPacketAsync(cts.Token);
+      var (id, type, body) = await ReadPacketAsync(cts.Token);
+
       if (type == SERVERDATA_RESPONSE_VALUE)
-      {
         return body;
-      }
     }
   }
 
-  int NextRequestId() => Interlocked.Increment(ref _requestId);
+  int NextRequestId() => ++_requestId;
 
   void SendPacket(int id, int type, string body)
   {

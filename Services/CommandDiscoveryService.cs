@@ -1,71 +1,58 @@
 using System.Text.RegularExpressions;
-using DSharpPlus;
-using DSharpPlus.Entities;
 using DiscordRcon.Models;
 
 namespace DiscordRcon.Services;
 
 public class CommandDiscoveryService
 {
-  DiscordClient _client;
-  ulong _guildId;
-  Timer _pollTimer;
-  bool _discoveryRunning;
+  volatile int _discoveryRunning;
+
+  public List<DiscoveredCommand> DiscoveredCommands { get; private set; } = new();
+  public bool IsReady { get; private set; }
 
   static readonly Regex _ansiRegex = new(@"\x1b\[\d+(?:;\d+)*m", RegexOptions.Compiled);
 
-  public void SetSlashExtension(DiscordClient client, ulong guildId)
-  {
-    _client = client;
-    _guildId = guildId;
-  }
-
   public void RunDiscovery()
   {
-    if (_discoveryRunning) return;
-    if (!Core.ConfigService.DiscoveryEnabled) return;
+    if (Interlocked.CompareExchange(ref _discoveryRunning, 1, 0) != 0) return;
 
     _ = DiscoverAndRetryAsync();
   }
 
   async Task DiscoverAndRetryAsync()
   {
-    var success = await DiscoverAndRegisterAsync();
-
-    if (!success)
+    var attempt = 0;
+    try
     {
-      Core.Log.LogInfo("Discovery failed, retrying in 30s...");
-      await Task.Delay(30_000);
-
-      if (Core.ConfigService.DiscoveryEnabled)
+      while (true)
       {
-        _ = DiscoverAndRetryAsync();
+        var success = await DiscoverAndBuildIndexAsync();
+
+        if (success)
+        {
+          IsReady = true;
+          break;
+        }
+
+        attempt++;
+        if (attempt >= 20)
+        {
+          Core.Log.LogError("Discovery failed after 20 attempts. Restart the server to retry.");
+          break;
+        }
+
+        Core.Log.LogInfo($"Discovery failed (attempt {attempt}), retrying in 30s...");
+        await Task.Delay(30_000);
       }
-      return;
     }
-
-    StartPolling();
+    finally
+    {
+      Interlocked.Exchange(ref _discoveryRunning, 0);
+    }
   }
 
-  public void StartPolling()
+  async Task<bool> DiscoverAndBuildIndexAsync()
   {
-    if (!Core.ConfigService.DiscoveryEnabled) return;
-    if (_pollTimer != null) return;
-
-    var interval = Core.ConfigService.DiscoveryPollIntervalSeconds * 1000;
-    _pollTimer = new Timer(_ => RunPeriodicDiscovery(), null, interval, interval);
-  }
-
-  void RunPeriodicDiscovery()
-  {
-    if (_discoveryRunning) return;
-    _ = DiscoverAndRegisterAsync();
-  }
-
-  async Task<bool> DiscoverAndRegisterAsync()
-  {
-    _discoveryRunning = true;
-
     try
     {
       var result = await Core.RconService.SendCommandAsync("help", 30000);
@@ -75,9 +62,13 @@ public class CommandDiscoveryService
         return false;
       }
 
-      var plainText = StripAnsi(result.Message);
-      var commands = ParseScarletHelpOutput(plainText);
-      await BulkRegisterSlashCommandsAsync(commands);
+      var plainText = _ansiRegex.Replace(result.Message, "");
+      var commands = ParseHelpOutput(plainText);
+
+      DiscoveredCommands = commands;
+      IsReady = true;
+
+      Core.Log.LogInfo($"Discovery complete: indexed {commands.Count} commands");
       return true;
     }
     catch (Exception e)
@@ -85,26 +76,16 @@ public class CommandDiscoveryService
       Core.Log.LogError($"Discovery error: {e.Message}");
       return false;
     }
-    finally
-    {
-      _discoveryRunning = false;
-    }
   }
 
-  static string StripAnsi(string input)
+  List<DiscoveredCommand> ParseHelpOutput(string helpText)
   {
-    return _ansiRegex.Replace(input, "");
-  }
-
-  List<DiscoveredCommand> ParseScarletHelpOutput(string helpText)
-  {
-    var commands = new Dictionary<string, DiscoveredCommand>(StringComparer.OrdinalIgnoreCase);
+    var commands = new List<DiscoveredCommand>();
 
     foreach (var line in helpText.Split('\n'))
     {
       var trimmed = line.Trim();
       if (string.IsNullOrEmpty(trimmed)) continue;
-
       if (trimmed.StartsWith("Total commands:", StringComparison.OrdinalIgnoreCase)) continue;
       if (!trimmed.StartsWith("-")) continue;
 
@@ -113,73 +94,79 @@ public class CommandDiscoveryService
       var colonIdx = body.IndexOf(':');
       if (colonIdx < 0) continue;
 
-      var name = body[..colonIdx].Trim();
-      if (string.IsNullOrEmpty(name)) continue;
-      if (!IsValidCommandName(name)) continue;
+      var commandId = body[..colonIdx].Trim();
+      if (string.IsNullOrEmpty(commandId)) continue;
 
       var detail = body[(colonIdx + 1)..].Trim();
 
-      if (commands.TryGetValue(name, out var existing))
+      var usage = "";
+      var description = detail;
+
+      var dashIdx = detail.IndexOf(" - ");
+      if (dashIdx >= 0)
       {
-        existing.AddOverload(detail);
+        usage = detail[..dashIdx].Trim();
+        description = detail[(dashIdx + 3)..].Trim();
       }
-      else
-      {
-        commands[name] = new DiscoveredCommand(name, detail);
-      }
+
+      commands.Add(new DiscoveredCommand(commandId, usage, description));
     }
 
-    return commands.Values.ToList();
+    return commands;
   }
 
-  static bool IsValidCommandName(string name)
+  public List<DiscoveredCommand> SearchCommands(string query)
   {
-    if (name.Length < 1 || name.Length > 32) return false;
-    return name.All(c => char.IsLetterOrDigit(c) || c == '_') && name.All(c => c <= 127);
+    if (string.IsNullOrEmpty(query) || DiscoveredCommands.Count == 0)
+      return new List<DiscoveredCommand>();
+
+    var lowerQuery = query.ToLowerInvariant();
+
+    var prefixMatches = PrefixMatches(lowerQuery);
+    if (prefixMatches.Count > 0) return prefixMatches;
+
+    var parentMatches = ParentPrefixMatches(lowerQuery);
+    if (parentMatches.Count > 0) return parentMatches;
+
+    var substringMatches = SubstringMatches(lowerQuery);
+    if (substringMatches.Count > 0) return substringMatches;
+
+    return new List<DiscoveredCommand>();
   }
 
-  static string SanitizeSlashName(string name)
+  List<DiscoveredCommand> PrefixMatches(string query)
   {
-    var sanitized = new string(name.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
-    if (sanitized.Length > 32) sanitized = sanitized[..32];
-    return sanitized.ToLower();
+    return DiscoveredCommands
+      .Where(c => c.CommandId.ToLowerInvariant() == query
+               || c.CommandId.ToLowerInvariant().StartsWith(query + "."))
+      .ToList();
   }
 
-  async Task BulkRegisterSlashCommandsAsync(List<DiscoveredCommand> commands)
+  List<DiscoveredCommand> ParentPrefixMatches(string query)
   {
-    if (_client == null || _guildId == 0) return;
-
-    try
+    var segmentIdx = query.LastIndexOf('.');
+    while (segmentIdx > 0)
     {
-      var slashCommands = new List<DiscordApplicationCommand>();
-
-      foreach (var cmd in commands)
-      {
-        var slashName = SanitizeSlashName(cmd.Name);
-        if (string.IsNullOrEmpty(slashName)) continue;
-
-        var desc = cmd.Description;
-        if (desc.Length > 100) desc = desc[..97] + "...";
-
-        var option = new DiscordApplicationCommandOption(
-          "arguments", "Command arguments", ApplicationCommandOptionType.String,
-          false);
-
-        slashCommands.Add(new DiscordApplicationCommand(slashName, desc, new[] { option }));
-      }
-
-      await _client.BulkOverwriteGuildApplicationCommandsAsync(_guildId, slashCommands);
-
-      Core.Log.LogInfo($"Discovery sync: registered {slashCommands.Count} slash commands (bulk replace)");
+      var parent = query[..segmentIdx];
+      var matches = PrefixMatches(parent);
+      if (matches.Count > 0) return matches;
+      segmentIdx = parent.LastIndexOf('.');
     }
-    catch (Exception e)
-    {
-      Core.Log.LogError($"Failed to bulk register slash commands: {e.Message}");
-    }
+
+    return new List<DiscoveredCommand>();
   }
 
-  public void Shutdown()
+  List<DiscoveredCommand> SubstringMatches(string query)
   {
-    _pollTimer?.Dispose();
+    return DiscoveredCommands
+      .Where(c => c.CommandId.ToLowerInvariant().Contains(query))
+      .Take(10)
+      .ToList();
+  }
+
+  public DiscoveredCommand FindExact(string commandId)
+  {
+    return DiscoveredCommands.FirstOrDefault(c =>
+      string.Equals(c.CommandId, commandId, StringComparison.OrdinalIgnoreCase));
   }
 }

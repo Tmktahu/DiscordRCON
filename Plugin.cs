@@ -2,7 +2,6 @@ using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using UnityEngine;
-using DiscordRcon.Services;
 
 namespace DiscordRcon;
 
