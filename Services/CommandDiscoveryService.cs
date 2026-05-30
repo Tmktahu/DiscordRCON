@@ -81,13 +81,21 @@ public class CommandDiscoveryService
   List<DiscoveredCommand> ParseHelpOutput(string helpText)
   {
     var commands = new List<DiscoveredCommand>();
+    var currentCategory = "";
 
     foreach (var line in helpText.Split('\n'))
     {
       var trimmed = line.Trim();
       if (string.IsNullOrEmpty(trimmed)) continue;
       if (trimmed.StartsWith("Total commands:", StringComparison.OrdinalIgnoreCase)) continue;
-      if (!trimmed.StartsWith("-")) continue;
+
+      if (!trimmed.StartsWith("-"))
+      {
+        var headerColonIdx = trimmed.IndexOf(':');
+        if (headerColonIdx > 0 && headerColonIdx == trimmed.Length - 1)
+          currentCategory = trimmed[..headerColonIdx].Trim();
+        continue;
+      }
 
       var body = trimmed[1..].Trim();
 
@@ -109,7 +117,7 @@ public class CommandDiscoveryService
         description = detail[(dashIdx + 3)..].Trim();
       }
 
-      commands.Add(new DiscoveredCommand(commandId, usage, description));
+      commands.Add(new DiscoveredCommand(commandId, usage, description, currentCategory));
     }
 
     return commands;

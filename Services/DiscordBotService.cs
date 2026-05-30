@@ -5,6 +5,7 @@ using DiscordRcon.Models;
 using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.EventArgs;
+using Microsoft.Extensions.Logging;
 
 namespace DiscordRcon.Services;
 
@@ -98,9 +99,11 @@ public class DiscordBotService
     var sb = new StringBuilder();
     foreach (var cmd in matches)
     {
-      sb.Append($"\n  - **{cmd.CommandId}**");
+      sb.Append("\n  - `");
+      sb.Append(cmd.CommandId);
       if (!string.IsNullOrEmpty(cmd.Usage))
-        sb.Append($" `{cmd.Usage}`");
+        sb.Append($" {cmd.Usage}");
+      sb.Append('`');
       if (!string.IsNullOrEmpty(cmd.Description))
         sb.Append($" - {cmd.Description}");
     }
@@ -111,11 +114,23 @@ public class DiscordBotService
   static string FormatFullListing(List<DiscoveredCommand> commands)
   {
     var sb = new StringBuilder();
+    var currentCategory = "";
+
     foreach (var cmd in commands)
     {
-      sb.Append($"- **{cmd.CommandId}**");
+      if (cmd.Category != currentCategory)
+      {
+        currentCategory = cmd.Category;
+        if (sb.Length > 0)
+          sb.Append('\n');
+        sb.Append($"**{currentCategory}:**\n");
+      }
+
+      sb.Append("- `");
+      sb.Append(cmd.CommandId);
       if (!string.IsNullOrEmpty(cmd.Usage))
-        sb.Append($" `{cmd.Usage}`");
+        sb.Append($" {cmd.Usage}");
+      sb.Append('`');
       if (!string.IsNullOrEmpty(cmd.Description))
         sb.Append($" - {cmd.Description}");
       sb.Append('\n');
@@ -144,7 +159,10 @@ public class DiscordBotService
     {
       Token = cfg.DiscordBotToken,
       TokenType = TokenType.Bot,
-      Intents = DiscordIntents.Guilds | DiscordIntents.GuildMembers
+      Intents = DiscordIntents.Guilds | DiscordIntents.GuildMembers,
+      GatewayCompressionLevel = GatewayCompressionLevel.None,
+      AutoReconnect = true,
+      MinimumLogLevel = LogLevel.None
     });
 
     _client.InteractionCreated += OnInteractionCreated;
@@ -170,13 +188,6 @@ public class DiscordBotService
 
   async Task OnReady(DiscordClient sender, ReadyEventArgs e)
   {
-    Core.Log.LogInfo($"Discord bot is ready, guilds in cache: {sender.Guilds.Count}");
-
-    if (sender.Guilds.Count == 0)
-    {
-      Core.Log.LogWarning("Discord guild cache is empty. Check that the bot has been added to your server.");
-    }
-
     await RegisterSlashCommandsAsync();
 
     Core.Log.LogInfo("Discovery will run in 60s");
@@ -604,37 +615,12 @@ public class DiscordBotService
 
   Task OnSocketClosed(DiscordClient sender, SocketCloseEventArgs e)
   {
-    if (_shuttingDown) return Task.CompletedTask;
+    if (_shuttingDown)
+      Core.Log.LogInfo($"Discord socket closed: {e.CloseCode} - {e.CloseMessage}");
+    else
+      Core.Log.LogWarning($"Discord socket closed: {e.CloseCode} - {e.CloseMessage}. Auto-reconnect will handle recovery.");
 
-    Core.Log.LogWarning($"Discord socket closed: {e.CloseCode} - {e.CloseMessage}");
-    _ = ReconnectWithBackoffAsync();
     return Task.CompletedTask;
-  }
-
-  async Task ReconnectWithBackoffAsync()
-  {
-    var delays = new[] { 1, 2, 4, 8, 16, 32, 60 };
-    int attempt = 0;
-
-    while (!_shuttingDown && attempt < delays.Length)
-    {
-      await Task.Delay(delays[attempt] * 1000);
-
-      try
-      {
-        Core.Log.LogInfo($"Discord reconnect attempt {attempt + 1}...");
-        await _client.ConnectAsync();
-        Core.Log.LogInfo("Discord reconnected successfully");
-        return;
-      }
-      catch (Exception e)
-      {
-        Core.Log.LogWarning($"Discord reconnect failed: {e.Message}");
-        attempt++;
-      }
-    }
-
-    Core.Log.LogError("Discord reconnect exhausted all attempts. Manual restart required.");
   }
 
   public void Shutdown()
